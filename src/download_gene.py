@@ -1,40 +1,31 @@
-# src/download_gene.py
+# src/download_gene_transcript.py
 
 import argparse
 import os
-
 from Bio import Entrez
 
 
-def get_nucleotide_id_from_gene(gene_id):
-    """
-    Obtiene un identificador de nucleótido asociado al gen.
-    """
-
-    handle = Entrez.elink(
-        dbfrom="gene",
-        db="nuccore",
-        id=gene_id
+def search_refseq_transcript(gene, organism):
+    query = (
+        f'{gene}[Gene Name] AND "{organism}"[Organism] '
+        f'AND (refseq[filter]) AND biomol_mrna[PROP]'
     )
 
+    handle = Entrez.esearch(
+        db="nuccore",
+        term=query,
+        retmax=5
+    )
     record = Entrez.read(handle)
     handle.close()
 
-    links = record[0]["LinkSetDb"]
+    if not record["IdList"]:
+        raise ValueError("No se encontraron transcritos RefSeq para ese gen.")
 
-    if not links:
-        raise ValueError("No se encontraron secuencias asociadas al gen.")
-
-    nucleotide_id = links[0]["Link"][0]["Id"]
-
-    return nucleotide_id
+    return record["IdList"][0]
 
 
 def download_fasta(nucleotide_id, output_path):
-    """
-    Descarga la secuencia FASTA.
-    """
-
     handle = Entrez.efetch(
         db="nuccore",
         id=nucleotide_id,
@@ -42,61 +33,44 @@ def download_fasta(nucleotide_id, output_path):
         retmode="text"
     )
 
-    fasta_data = handle.read()
-
+    fasta = handle.read()
     handle.close()
 
     with open(output_path, "w", encoding="utf-8") as file:
-        file.write(fasta_data)
+        file.write(fasta)
 
 
 def main():
-
     parser = argparse.ArgumentParser(
-        description="Descarga secuencias FASTA desde NCBI usando Gene ID."
+        description="Descarga un transcrito RefSeq en FASTA desde NCBI."
     )
 
-    parser.add_argument(
-        "--gene-id",
-        required=True,
-        help="Gene ID de NCBI"
-    )
-
-    parser.add_argument(
-        "--email",
-        required=True,
-        help="Email requerido por NCBI"
-    )
-
-    parser.add_argument(
-        "--outdir",
-        default="data",
-        help="Directorio de salida"
-    )
+    parser.add_argument("--gene", required=True)
+    parser.add_argument("--organism", required=True)
+    parser.add_argument("--email", required=True)
+    parser.add_argument("--outdir", default="data")
 
     args = parser.parse_args()
 
     Entrez.email = args.email
-    Entrez.tool = "MiniBlastParallel"
+    Entrez.tool = "MiniBlastParalelo"
 
     os.makedirs(args.outdir, exist_ok=True)
 
-    print("Buscando secuencia asociada al gen...")
+    print("Buscando transcrito RefSeq...")
+    nucleotide_id = search_refseq_transcript(args.gene, args.organism)
 
-    nucleotide_id = get_nucleotide_id_from_gene(args.gene_id)
-
-    print(f"Nucleotide ID encontrado: {nucleotide_id}")
-
-    output_file = os.path.join(
+    output_path = os.path.join(
         args.outdir,
-        f"gene_{args.gene_id}.fasta"
+        f"{args.gene}_{args.organism}_transcript.fasta".replace(" ", "_")
     )
 
+    print(f"ID encontrado: {nucleotide_id}")
     print("Descargando FASTA...")
 
-    download_fasta(nucleotide_id, output_file)
+    download_fasta(nucleotide_id, output_path)
 
-    print(f"Archivo guardado en: {output_file}")
+    print(f"Archivo guardado en: {output_path}")
 
 
 if __name__ == "__main__":
