@@ -1,54 +1,84 @@
-# src/download_gene_transcript.py
-
 import argparse
+import csv
 import os
-from Bio import Entrez
+import re
+from io import StringIO
+
+from Bio import Entrez, SeqIO
 
 
-def search_refseq_transcript(gene, organism):
-    query = (
-        f'{gene}[Gene Name] AND "{organism}"[Organism] '
-        f'AND (refseq[filter]) AND biomol_mrna[PROP]'
-    )
+def download_fasta(accession):
 
-    handle = Entrez.esearch(
-        db="nuccore",
-        term=query,
-        retmax=5
-    )
-    record = Entrez.read(handle)
-    handle.close()
-
-    if not record["IdList"]:
-        raise ValueError("No se encontraron transcritos RefSeq para ese gen.")
-
-    return record["IdList"][0]
-
-
-def download_fasta(nucleotide_id, output_path):
     handle = Entrez.efetch(
         db="nuccore",
-        id=nucleotide_id,
+        id=accession,
         rettype="fasta",
         retmode="text"
     )
 
-    fasta = handle.read()
+    fasta_text = handle.read()
+
     handle.close()
 
-    with open(output_path, "w", encoding="utf-8") as file:
-        file.write(fasta)
+    return fasta_text
+
+
+def fasta_to_record(fasta_text):
+
+    record = next(
+        SeqIO.parse(
+            StringIO(fasta_text),
+            "fasta"
+        )
+    )
+
+    return record
+
+
+def extract_gene_name(description):
+
+    match = re.search(
+        r"\(([^()]+)\),\s*mRNA",
+        description
+    )
+
+    if match:
+        return match.group(1)
+
+    return "NA"
+
+
+def extract_organism(description):
+    parts = description.split()
+
+    if len(parts) >= 3:
+        return f"{parts[1]} {parts[2]}"
+
+    return "NA"
 
 
 def main():
+
     parser = argparse.ArgumentParser(
-        description="Descarga un transcrito RefSeq en FASTA desde NCBI."
+        description="Descarga un transcrito RefSeq desde NCBI."
     )
 
-    parser.add_argument("--gene", required=True)
-    parser.add_argument("--organism", required=True)
-    parser.add_argument("--email", required=True)
-    parser.add_argument("--outdir", default="data")
+    parser.add_argument(
+        "--accession",
+        required=True,
+        help="Accession RefSeq (ej: NM_079109.3)"
+    )
+
+    parser.add_argument(
+        "--email",
+        required=True,
+        help="Email requerido por NCBI"
+    )
+
+    parser.add_argument(
+        "--outdir",
+        default="data"
+    )
 
     args = parser.parse_args()
 
@@ -57,19 +87,49 @@ def main():
 
     os.makedirs(args.outdir, exist_ok=True)
 
-    print("Buscando transcrito RefSeq...")
-    nucleotide_id = search_refseq_transcript(args.gene, args.organism)
+    print(f"Descargando {args.accession}...")
+
+    fasta_text = download_fasta(args.accession)
+
+    record = fasta_to_record(fasta_text)
+
+    sequence = str(record.seq)
+
+    description = record.description
+
+    organism = extract_organism(description)
+
+    gene_name = extract_gene_name(description)
 
     output_path = os.path.join(
         args.outdir,
-        f"{args.gene}_{args.organism}_transcript.fasta".replace(" ", "_")
+        f"{args.accession}.tsv"
     )
 
-    print(f"ID encontrado: {nucleotide_id}")
-    print("Descargando FASTA...")
+    with open(output_path, "w", encoding="utf-8", newline="") as out_file:
 
-    download_fasta(nucleotide_id, output_path)
+        writer = csv.writer(
+            out_file,
+            delimiter="\t"
+        )
 
+        writer.writerow([
+            "accession",
+            "organism",
+            "gene_name",
+            "description",
+            "sequence"
+        ])
+
+        writer.writerow([
+            args.accession,
+            organism,
+            gene_name,
+            description,
+            sequence
+        ])
+
+    print("Descarga completada.")
     print(f"Archivo guardado en: {output_path}")
 
 
