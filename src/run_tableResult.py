@@ -21,7 +21,7 @@ from miniblast_sequential import (
     load_database,
     compare_sequences
 )
-from miniblast_parallel import compare_sequences_parallel
+from miniblast_parallel import compare_sequences_parallel, _get_or_create_spark
 
 
 def parse_workers(workers_str):
@@ -75,6 +75,10 @@ def main():
     print(f"Configuraciones a probar: secuencial + paralelo con workers={workers_list}")
     print(f"Repeticiones por configuracion: {args.repeats} (se toma la mediana)\n")
 
+    print("Iniciando SparkSession (precalentamiento, no se mide)...")
+    _get_or_create_spark(max(workers_list))
+    print()
+
     bench = BenchmarkTable(label="MiniBLAST - Secuencial vs Paralelo")
 
     total = 1 + len(workers_list)
@@ -100,7 +104,7 @@ def main():
             workers,
             compare_sequences_parallel,
             reference=reference,
-            database=database,
+            database_path=args.database,
             kmer_size=args.kmer_size,
             reference_step=args.reference_step,
             window_step=args.window_step,

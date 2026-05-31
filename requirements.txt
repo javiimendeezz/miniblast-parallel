@@ -1,1 +1,5 @@
 biopython
+tabulate
+seaborn
+pandas
+matplotlib

@@ -194,3 +194,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
+# Para llamarlo: python src/plot_benchmark.py
